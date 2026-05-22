@@ -15,212 +15,289 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ====== 自定义样式（学术 · 极简）======
+# ====== 自定义样式（GitHub 风 · 学术极简）======
+# 注意：不要把字体规则下到 .stApp / 全局，否则会覆盖 Streamlit 的 Material Symbols
+# 图标字体，导致按钮显示成 "upload"、"keyboard_double_arrow_left" 这样的字面字符串。
 st.markdown(
     """
 <style>
     :root {
-        --ink: #1a1a1a;
-        --ink-soft: #4b5563;
-        --muted: #6b7280;
-        --line: #e5e7eb;
-        --paper: #fcfcfa;
-        --paper-soft: #f6f5f1;
-        --accent: #1f3a5f;
-        --accent-soft: #eef2f7;
+        --ink: #1f2328;
+        --ink-soft: #424a53;
+        --muted: #656d76;
+        --line: #d0d7de;
+        --line-soft: #eaeef2;
+        --canvas: #ffffff;
+        --canvas-subtle: #f6f8fa;
+        --accent: #0969da;          /* GitHub blue */
+        --accent-soft: #ddf4ff;
+        --success: #1a7f37;
+        --success-soft: #dafbe1;
+        --purple: #8250df;
+        --purple-soft: #fbefff;
     }
 
-    .stApp {
-        background: var(--paper);
-        font-family: 'Georgia', 'Source Serif Pro', 'Songti SC', 'Noto Serif SC', serif;
-    }
+    .stApp { background: var(--canvas); }
 
-    /* 排版：主区使用衬线，体现学术质感 */
-    .stApp, .stApp p, .stApp li {
+    /* 文本字体限定到具体的「文本」元素，避免污染图标 / 按钮 */
+    .stApp p, .stApp li, .stApp h1, .stApp h2, .stApp h3, .stApp h4,
+    .stApp h5, .stApp h6, .stApp label, .stApp [data-testid="stMarkdownContainer"],
+    div[data-testid="stChatMessage"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+                     "PingFang SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
         color: var(--ink);
-        font-size: 15.5px;
-        line-height: 1.75;
     }
-    .stApp h1, .stApp h2, .stApp h3 {
-        font-family: 'Georgia', 'Songti SC', 'Noto Serif SC', serif;
-        color: var(--ink);
-        letter-spacing: -0.01em;
+    .stApp p, .stApp li, div[data-testid="stChatMessage"] {
+        font-size: 14.5px;
+        line-height: 1.7;
     }
 
-    /* 顶部标题区 —— 纸张感、细横线分隔 */
+    /* 整体上移：缩小主区与侧栏顶部内边距 */
+    .stApp .main .block-container,
+    section.main > div.block-container,
+    div[data-testid="stAppViewContainer"] > section > div.block-container {
+        padding-top: 0.8rem !important;
+        padding-bottom: 2rem !important;
+    }
+    section[data-testid="stSidebar"] > div:first-child {
+        padding-top: 1rem !important;
+    }
+
+    /* 强制保留 Material Symbols 图标字体（修复 upload / 收起侧栏按钮乱码） */
+    [data-testid="stIconMaterial"],
+    span.material-symbols-rounded,
+    span.material-symbols-outlined,
+    span.material-icons,
+    button[kind] [data-testid="stIconMaterial"] {
+        font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                     'Material Icons' !important;
+        font-weight: normal !important;
+        font-style: normal !important;
+        font-feature-settings: 'liga' !important;
+    }
+
+    /* ===== Hero 区 —— GitHub 仓库 header 风 ===== */
     .hero {
-        padding: 18px 4px 14px 4px;
+        padding: 4px 0 14px 0;
         margin-bottom: 18px;
         border-bottom: 1px solid var(--line);
     }
-    .hero h1 {
-        margin: 0 0 4px 0;
-        font-size: 28px;
+    .hero-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 6px 0;
+    }
+    .hero-title h1 {
+        margin: 0;
+        font-size: 22px;
         font-weight: 600;
         color: var(--ink);
+        letter-spacing: -0.01em;
     }
-    .hero .subtitle {
+    .hero-title .repo-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px; height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--canvas-subtle);
+        font-size: 14px;
+    }
+    .hero-subtitle {
         margin: 0;
-        font-size: 13.5px;
+        font-size: 13px;
         color: var(--muted);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        letter-spacing: 0.02em;
     }
-    .hero .meta {
-        display: inline-block;
-        margin-left: 10px;
-        padding: 2px 8px;
-        font-size: 11px;
-        font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-        color: var(--ink-soft);
-        background: var(--accent-soft);
-        border-radius: 4px;
-        letter-spacing: 0.04em;
+    .hero-meta {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
     }
 
-    /* 章节标题 */
+    /* ===== 通用徽章（GitHub Label 风） ===== */
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 500;
+        font-family: -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+    }
+    .pill-blue   { background: var(--accent-soft);  color: var(--accent); border: 1px solid #b6e3ff;}
+    .pill-green  { background: var(--success-soft); color: var(--success); border: 1px solid #aceebb;}
+    .pill-purple { background: var(--purple-soft);  color: var(--purple); border: 1px solid #ecd5ff;}
+    .pill-gray   { background: var(--canvas-subtle); color: var(--ink-soft); border: 1px solid var(--line);}
+
+    /* ===== 章节标题 ===== */
     .section-title {
-        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
         font-weight: 600;
         color: var(--ink-soft);
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         margin: 0 0 10px 0;
-        font-family: 'Inter', -apple-system, sans-serif;
+    }
+    .section-title .dot {
+        display: inline-block;
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
     }
 
-    /* 当前集合显示 */
+    /* 当前集合元信息行 */
     .meta-line {
         font-size: 12.5px;
         color: var(--muted);
-        font-family: 'Inter', sans-serif;
         margin-bottom: 14px;
-        padding-bottom: 10px;
-        border-bottom: 1px dashed var(--line);
+        padding: 8px 12px;
+        background: var(--canvas-subtle);
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
-    .meta-line b {
+    .meta-line code {
+        background: transparent;
         color: var(--accent);
         font-weight: 600;
-        font-family: 'JetBrains Mono', 'SF Mono', monospace;
-        font-size: 12px;
+        font-size: 12.5px;
+        padding: 0;
     }
 
-    /* 侧边栏 */
+    /* ===== 侧边栏 ===== */
     section[data-testid="stSidebar"] {
-        background: var(--paper-soft);
+        background: var(--canvas-subtle);
         border-right: 1px solid var(--line);
-    }
-    section[data-testid="stSidebar"] * {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     section[data-testid="stSidebar"] .stButton button {
         width: 100%;
         border-radius: 6px;
         border: 1px solid var(--line);
-        background: #ffffff;
-        color: var(--ink-soft);
+        background: var(--canvas);
+        color: var(--ink);
         font-weight: 500;
         font-size: 13.5px;
-        transition: border-color 0.15s, color 0.15s;
-        box-shadow: none;
+        box-shadow: 0 1px 0 rgba(31,35,40,.04);
+        transition: all 0.12s ease;
     }
     section[data-testid="stSidebar"] .stButton button:hover {
+        background: var(--canvas-subtle);
         border-color: var(--accent);
         color: var(--accent);
-        background: #ffffff;
     }
 
-    /* 主操作按钮 */
+    /* 主操作按钮（GitHub primary green） */
     .stButton button[kind="primary"] {
-        background: var(--accent);
-        border: 1px solid var(--accent);
+        background: linear-gradient(180deg, #2da44e, #2c974b);
+        border: 1px solid rgba(31,35,40,.15);
         color: #ffffff;
-        font-weight: 500;
+        font-weight: 600;
         border-radius: 6px;
-        box-shadow: none;
+        box-shadow: 0 1px 0 rgba(31,35,40,.1), inset 0 1px 0 rgba(255,255,255,.03);
     }
     .stButton button[kind="primary"]:hover {
-        background: #16304d;
-        border-color: #16304d;
+        background: linear-gradient(180deg, #2c974b, #298e46);
     }
     .stButton button[kind="primary"]:disabled {
-        background: #cfd5dd;
-        border-color: #cfd5dd;
+        background: #94d3a2;
         color: #ffffff;
     }
 
-    /* 聊天气泡：克制的线框 */
+    /* 聊天气泡 */
     div[data-testid="stChatMessage"] {
-        background: #ffffff;
+        background: var(--canvas);
         border-radius: 8px;
-        padding: 14px 20px;
+        padding: 14px 18px;
         border: 1px solid var(--line);
         box-shadow: none;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
     }
 
     /* 输入框 */
     div[data-testid="stChatInput"] textarea {
         border-radius: 8px !important;
         border: 1px solid var(--line) !important;
-        font-family: 'Georgia', 'Songti SC', serif !important;
-        font-size: 15px !important;
+        font-size: 14.5px !important;
+    }
+    div[data-testid="stChatInput"] textarea:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(9,105,218,0.15) !important;
     }
 
     /* 来源徽章 */
     .source-badge {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         padding: 2px 8px;
-        background: #ffffff;
+        background: var(--accent-soft);
         color: var(--accent);
-        border: 1px solid var(--accent);
-        border-radius: 3px;
-        font-size: 11px;
-        font-family: 'JetBrains Mono', 'SF Mono', monospace;
+        border: 1px solid #b6e3ff;
+        border-radius: 12px;
+        font-size: 11.5px;
+        font-weight: 500;
         margin: 2px 4px 2px 0;
     }
     .source-page {
         display: inline-block;
-        padding: 1px 6px;
-        background: var(--accent-soft);
-        color: var(--accent);
-        border-radius: 3px;
+        padding: 1px 7px;
+        background: var(--purple-soft);
+        color: var(--purple);
+        border-radius: 12px;
         font-size: 11px;
-        font-family: 'JetBrains Mono', 'SF Mono', monospace;
-        font-weight: 500;
+        font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     }
 
     /* 文件明细行 */
     .file-row {
-        padding: 6px 10px;
-        border-bottom: 1px solid var(--line);
-        font-size: 12.5px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line-soft);
+        font-size: 13px;
         color: var(--ink-soft);
         display: flex;
         justify-content: space-between;
-        font-family: 'Inter', sans-serif;
+        align-items: center;
     }
     .file-row:last-child { border-bottom: none; }
+    .file-row .right { color: var(--muted); font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
 
     /* 引用面板 */
     .ref-panel {
-        padding: 14px 0 0 0;
+        padding: 8px 0 0 0;
         border-left: 2px solid var(--line);
-        padding-left: 20px;
-    }
-    .ref-panel .section-title {
-        margin-bottom: 14px;
+        padding-left: 18px;
     }
 
     /* 隐藏默认 chrome */
     #MainMenu, footer {visibility: hidden;}
     header[data-testid="stHeader"] {background: transparent;}
 
-    /* expander 简化 */
+    /* expander */
     div[data-testid="stExpander"] {
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: #ffffff;
+        background: var(--canvas);
+    }
+    div[data-testid="stExpander"] summary {
+        font-size: 13px !important;
+        color: var(--ink-soft);
+    }
+
+    /* radio 紧凑化 */
+    div[data-testid="stRadio"] label {
+        font-size: 13px !important;
     }
 </style>
 """,
@@ -273,11 +350,17 @@ if "upload_log" not in st.session_state:
 st.markdown(
     """
 <div class="hero">
-  <h1>AI Research Assistant</h1>
-  <p class="subtitle">
-    基于检索增强生成（RAG）的学术文献阅读与问答工作台
-    <span class="meta">DeepSeek-V4-Pro</span>
-  </p>
+  <div class="hero-title">
+    <span class="repo-mark">📖</span>
+    <h1>AI Research Assistant</h1>
+  </div>
+  <p class="hero-subtitle">基于检索增强生成（RAG）的学术文献阅读与问答工作台</p>
+  <div class="hero-meta">
+    <span class="pill pill-blue">⚡ DeepSeek-V4-Pro</span>
+    <span class="pill pill-green">🧩 Semantic Chunking</span>
+    <span class="pill pill-purple">🔍 ChromaDB · top-k</span>
+    <span class="pill pill-gray">📚 Multi-Paper Collection</span>
+  </div>
 </div>
 """,
     unsafe_allow_html=True,
@@ -286,7 +369,10 @@ st.markdown(
 
 # ====== Sidebar ======
 with st.sidebar:
-    st.markdown("<p class='section-title'>I · 文献入库</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p class='section-title'><span class='dot'></span>📥 文献入库</p>",
+        unsafe_allow_html=True,
+    )
 
     existing = refresh_collections()
     mode = st.radio(
@@ -323,7 +409,7 @@ with st.sidebar:
 
     upload_disabled = not (uploaded_files and target_collection)
     if st.button(
-        "上传并入库",
+        "🚀  上传并入库",
         type="primary",
         use_container_width=True,
         disabled=upload_disabled,
@@ -350,18 +436,26 @@ with st.sidebar:
                 st.error(f"上传失败: {e}")
 
     if st.session_state.upload_log:
-        with st.expander("最近一次上传明细", expanded=False):
+        with st.expander("📋 最近一次上传明细", expanded=False):
             for f in st.session_state.upload_log:
-                marker = "·" if f["status"] == "ok" else ("‒" if f["status"] == "skipped" else "×")
+                if f["status"] == "ok":
+                    marker = "🟢"
+                elif f["status"] == "skipped":
+                    marker = "🟡"
+                else:
+                    marker = "🔴"
                 detail = f"{f['chunks_count']} chunks" if f["status"] == "ok" else (f.get("error") or "")
                 st.markdown(
                     f"<div class='file-row'><span>{marker}&nbsp;&nbsp;{f['filename']}</span>"
-                    f"<span style='color:#9ca3af'>{detail}</span></div>",
+                    f"<span class='right'>{detail}</span></div>",
                     unsafe_allow_html=True,
                 )
 
-    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-    st.markdown("<p class='section-title'>II · 文献集合</p>", unsafe_allow_html=True)
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<p class='section-title'><span class='dot'></span>📚 文献集合</p>",
+        unsafe_allow_html=True,
+    )
     existing = refresh_collections()
     if existing:
         default_idx = (
@@ -377,7 +471,7 @@ with st.sidebar:
         )
         st.session_state.current_collection = selected
 
-        if st.button("删除当前集合", use_container_width=True):
+        if st.button("🗑️  删除当前集合", use_container_width=True):
             try:
                 api_delete(f"/collection/{selected}")
                 st.success(f"已删除: {selected}")
@@ -388,8 +482,8 @@ with st.sidebar:
     else:
         st.info("尚无文档，请先上传。")
 
-    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-    if st.button("清空对话历史", use_container_width=True):
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+    if st.button("🧹  清空对话历史", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.last_sources = []
         st.rerun()
@@ -399,15 +493,20 @@ with st.sidebar:
 main_col, side_col = st.columns([2, 1], gap="large")
 
 with main_col:
-    st.markdown("<p class='section-title'>对话</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p class='section-title'><span class='dot'></span>💬 对话</p>",
+        unsafe_allow_html=True,
+    )
     if st.session_state.current_collection:
         st.markdown(
-            f"<div class='meta-line'>当前集合 · <b>{st.session_state.current_collection}</b></div>",
+            f"<div class='meta-line'>📂 当前集合 · <code>{st.session_state.current_collection}</code>"
+            f"<span style='margin-left:auto'><span class='pill pill-gray'>chat history × "
+            f"{len(st.session_state.chat_history)}</span></span></div>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            "<div class='meta-line'>请先在左侧选择或上传集合后开始提问</div>",
+            "<div class='meta-line'>👈 请先在左侧上传或选择集合后开始提问</div>",
             unsafe_allow_html=True,
         )
 
@@ -450,23 +549,22 @@ with main_col:
 
 with side_col:
     st.markdown(
-        "<div class='ref-panel'><p class='section-title'>引用来源</p>",
+        "<div class='ref-panel'><p class='section-title'><span class='dot'></span>🔖 引用来源</p>",
         unsafe_allow_html=True,
     )
 
     if not st.session_state.last_sources:
         st.markdown(
-            "<p style='color:#9ca3af;font-size:13px;font-family:Inter,sans-serif'>"
-            "发起一次提问后，模型引用的原文片段将在此列出。</p>",
+            "<p style='color:#8c959f;font-size:13px;margin-top:8px;'>"
+            "💡 发起一次提问后，模型引用的原文片段将在此列出。</p>",
             unsafe_allow_html=True,
         )
     else:
         unique_files = sorted({s.get("source", "?") for s in st.session_state.last_sources})
         st.markdown(
-            "<div style='margin-bottom:14px;font-size:12px;color:#6b7280;"
-            "font-family:Inter,sans-serif'>涉及文献</div>"
+            "<div style='margin-bottom:10px;font-size:12px;color:#656d76;'>📄 涉及文献</div>"
             + "<div>"
-            + "".join(f"<span class='source-badge'>{f}</span>" for f in unique_files)
+            + "".join(f"<span class='source-badge'>📑 {f}</span>" for f in unique_files)
             + "</div>",
             unsafe_allow_html=True,
         )
