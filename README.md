@@ -102,10 +102,11 @@ LLM_MODEL=deepseek-v4-pro
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `LLM_MODEL` | `deepseek-v4-pro` | 旗舰推理模型；可选 `deepseek-v4-flash` 以追求速度 |
-| `CHUNK_SIZE` | `800` | 每个知识块的字符数，论文建议 600–1000 |
-| `CHUNK_OVERLAP` | `100` | 相邻块的重叠字符数，避免截断关键句 |
+| `CHUNK_SIZE` | `800` | 每个语义块的目标字符数（按句子贪心打包后接近此值） |
+| `CHUNK_OVERLAP` | `100` | 相邻块之间共享的「完整尾句」总长上限（语义重叠，而非字符截断） |
 | `RETRIEVER_TOP_K` | `5` | 每次检索返回的最相关块数 |
 | `LLM_TEMPERATURE` | `0.2` | 学术问答场景建议低温度，避免发散 |
+| `LLM_MAX_TOKENS` | `20480` | 输出 token 上限；详尽分析、跨论文综述建议设大 |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | 默认本地 sentence-transformers 模型，零成本 |
 
 ### 3. 启动服务
@@ -158,7 +159,13 @@ print(settings.llm_model)  # deepseek-v4-pro
 | `.md` | 原生读取 | 同 TXT |
 | `.docx` | python-docx | 段落级提取 |
 
-**切块策略：** `RecursiveCharacterTextSplitter`，按 `\n\n → \n → 。 → . → 空格` 优先级切割，中文场景友好。
+**切块策略（Semantic-aware Chunking）：** 直接按字符切是最常见但也最粗暴的做法 —— 极易在句中、公式、列表项中截断，导致检索时拿到「半截语义」。本项目采用 **段落 → 句子 → 滑窗合并** 的三段式语义感知切块（[core/document_processor.py](core/document_processor.py)）：
+
+1. **段落优先**：以空行为天然边界，段落本身即语义单元；
+2. **句子兜底**：超长段落用中英文句末标点（`。！？.!?；;`）切分，**不破坏句子内部**；
+3. **滑窗合并**：以句子为最小原子单元贪心拼接到接近 `CHUNK_SIZE`；相邻 chunk 之间共享若干「完整尾句」作为重叠（而非粗暴的字符级 overlap），既保留上下文又不重复半截话。
+
+这种策略对学术文献的论证链条、定理证明、表格说明都更友好，能显著降低检索失配率。
 
 每个 chunk 携带元数据：
 
@@ -366,7 +373,7 @@ curl -X DELETE http://localhost:8000/collection/paper
 ## 常见问题
 
 **Q: 上传 PDF 后回答答非所问？**  
-调小 `CHUNK_SIZE`（试试 500）或调大 `RETRIEVER_TOP_K`（试试 8），让检索覆盖更多原文。
+调小 `CHUNK_SIZE`（试试 500）或调大 `RETRIEVER_TOP_K`（试试 8），让检索覆盖更多原文。由于切块本身是语义感知的（按句不按字符），通常不需要担心关键句被截断，重点是覆盖宽度。
 
 **Q: API Key 如何填写？**  
 在 [DeepSeek 开放平台](https://platform.deepseek.com) 创建 Key，复制到 `.env` 中的 `DEEPSEEK_API_KEY=` 后面，不要加引号。若你使用第三方代理网关，把 `DEEPSEEK_BASE_URL` 改为对应地址即可。

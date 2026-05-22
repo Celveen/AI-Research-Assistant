@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     retriever_top_k: int = 5
 
     llm_temperature: float = 0.2
-    llm_max_tokens: int = 4096
+    llm_max_tokens: int = 20480
 
     embedding_model: str = "all-MiniLM-L6-v2"
 

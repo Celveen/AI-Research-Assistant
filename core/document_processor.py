@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,60 +43,88 @@ def _read_docx(path: Path) -> list[tuple[int, str]]:
     return [(1, text)]
 
 
-_SEPARATORS = ["\n\n", "\n", "。", ".", "！", "？", "!", "?", " ", ""]
+"""
+语义感知切块（Semantic-aware chunking）
+================================================
+
+学术文献的语义粒度天然是「段落 > 句子 > 短语」，按字符硬切容易在句中、公式中、
+列表中截断，导致检索时拿到半截语义。这里采用 **段落 → 句子 → 滑窗合并** 三段式：
+
+1. 段落优先：按空行切段，段落已是天然的语义单元；
+2. 句子兜底：超长段落用中英文句末标点（。！？.!?；;）切分，**不破坏句子内部**；
+3. 滑窗合并：按句贪心拼接到接近 chunk_size，且相邻 chunk 共享若干「完整尾句」
+   作为重叠（而非粗暴的字符级 overlap），保留上下文又不重复半截话。
+"""
+
+_SENTENCE_END_RE = re.compile(r"(?<=[。！？!?；;\.])\s+|(?<=[。！？；])")
 
 
-def _split_recursive(text: str, chunk_size: int, separators: list[str]) -> list[str]:
-    """简化版 RecursiveCharacterTextSplitter：按分隔符优先级递归切分至 <= chunk_size。"""
-    if len(text) <= chunk_size:
-        return [text] if text else []
+def _split_paragraphs(text: str) -> list[str]:
+    parts = re.split(r"\n\s*\n+", text.strip())
+    return [p.strip() for p in parts if p.strip()]
 
-    sep = ""
-    for s in separators:
-        if s == "" or s in text:
-            sep = s
-            break
 
-    if sep == "":
-        return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
-
-    pieces = text.split(sep)
-    remaining = [s for s in separators[separators.index(sep) + 1 :]]
+def _split_sentences(paragraph: str) -> list[str]:
+    """将段落切为句子；保留句末标点，避免句中断裂。"""
+    raw = _SENTENCE_END_RE.split(paragraph)
+    sents = [s.strip() for s in raw if s and s.strip()]
+    # 兜底：若仍存在超长「句子」（例如代码、公式、长 URL），按软长度切
     out: list[str] = []
-    for p in pieces:
-        chunk = p + (sep if sep != "\n\n" else "")
-        if len(chunk) <= chunk_size:
-            out.append(chunk)
+    soft_max = max(settings.chunk_size, 400)
+    for s in sents:
+        if len(s) <= soft_max:
+            out.append(s)
         else:
-            out.extend(_split_recursive(chunk, chunk_size, remaining or [""]))
+            out.extend(s[i : i + soft_max] for i in range(0, len(s), soft_max))
     return out
 
 
-def _merge_with_overlap(pieces: list[str], chunk_size: int, overlap: int) -> list[str]:
-    """将细碎 pieces 合并到接近 chunk_size，并保留相邻 overlap 重叠。"""
-    merged: list[str] = []
-    buf = ""
-    for p in pieces:
-        if not p.strip():
-            continue
-        if len(buf) + len(p) <= chunk_size:
-            buf += p
+def _semantic_chunk(text: str, chunk_size: int, overlap_chars: int) -> list[str]:
+    """以「句子」为最小单元贪心打包；用尾部若干完整句作为重叠。"""
+    units: list[str] = []
+    for para in _split_paragraphs(text):
+        if len(para) <= chunk_size:
+            units.append(para)
         else:
-            if buf:
-                merged.append(buf)
-            if overlap > 0 and merged:
-                tail = merged[-1][-overlap:]
-                buf = tail + p
-            else:
-                buf = p
-    if buf.strip():
-        merged.append(buf)
-    return merged
+            units.extend(_split_sentences(para))
+
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+
+    def flush() -> None:
+        nonlocal buf, buf_len
+        if buf:
+            chunks.append(" ".join(buf).strip())
+            buf, buf_len = [], 0
+
+    for u in units:
+        u_len = len(u)
+        sep_len = 1 if buf else 0
+        if buf and buf_len + sep_len + u_len > chunk_size:
+            flush()
+            # 取上一 chunk 末尾若干完整句作为语义重叠
+            if overlap_chars > 0 and chunks:
+                tail_sents = _split_sentences(chunks[-1])
+                acc = 0
+                tail: list[str] = []
+                for s in reversed(tail_sents):
+                    if acc + len(s) > overlap_chars:
+                        break
+                    tail.insert(0, s)
+                    acc += len(s)
+                if tail:
+                    buf = tail[:]
+                    buf_len = sum(len(s) for s in buf) + max(len(buf) - 1, 0)
+        buf.append(u)
+        buf_len += u_len + sep_len
+
+    flush()
+    return [c for c in chunks if c]
 
 
 def _split_text(text: str) -> list[str]:
-    pieces = _split_recursive(text, settings.chunk_size, _SEPARATORS)
-    return _merge_with_overlap(pieces, settings.chunk_size, settings.chunk_overlap)
+    return _semantic_chunk(text, settings.chunk_size, settings.chunk_overlap)
 
 
 def process_file(path: str | Path) -> list[Chunk]:
