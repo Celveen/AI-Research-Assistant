@@ -22,6 +22,13 @@ class Settings(BaseSettings):
 
     retriever_top_k: int = 5
 
+    # —— 自适应检索 ——
+    retriever_adaptive: bool = True
+    retriever_fetch_k: int = 20          # 初次召回的大池规模
+    retriever_score_threshold: float = 0.6  # cosine distance，越小越相关；≤阈值才保留
+    retriever_min_k: int = 3             # 兜底最少返回，保证有上下文
+    retriever_max_k: int = 10            # 上限，避免上下文过长
+
     llm_temperature: float = 0.2
     llm_max_tokens: int = 20480
 

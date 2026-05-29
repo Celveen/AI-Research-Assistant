@@ -104,7 +104,11 @@ LLM_MODEL=deepseek-v4-pro
 | `LLM_MODEL` | `deepseek-v4-pro` | 旗舰推理模型；可选 `deepseek-v4-flash` 以追求速度 |
 | `CHUNK_SIZE` | `800` | 每个语义块的目标字符数（按句子贪心打包后接近此值） |
 | `CHUNK_OVERLAP` | `100` | 相邻块之间共享的「完整尾句」总长上限（语义重叠，而非字符截断） |
-| `RETRIEVER_TOP_K` | `5` | 每次检索返回的最相关块数 |
+| `RETRIEVER_TOP_K` | `5` | 关闭自适应时的固定返回块数 |
+| `RETRIEVER_ADAPTIVE` | `true` | 是否启用自适应检索（见下方说明） |
+| `RETRIEVER_FETCH_K` | `20` | 自适应模式下初次召回的「大池」规模 |
+| `RETRIEVER_SCORE_THRESHOLD` | `0.6` | cosine distance 阈值，≤ 此值才算相关（越小越严格） |
+| `RETRIEVER_MIN_K` / `RETRIEVER_MAX_K` | `3` / `10` | 自适应保留块数的下限 / 上限 |
 | `LLM_TEMPERATURE` | `0.2` | 学术问答场景建议低温度，避免发散 |
 | `LLM_MAX_TOKENS` | `20480` | 输出 token 上限；详尽分析、跨论文综述建议设大 |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | 默认本地 sentence-transformers 模型，零成本 |
@@ -185,6 +189,18 @@ print(settings.llm_model)  # deepseek-v4-pro
 
 默认嵌入函数使用 `sentence-transformers/all-MiniLM-L6-v2`，**本地运行、零成本**，避免占用 DeepSeek API 配额。
 
+**自适应检索（Adaptive Retrieval）：** 固定 `top-k` 有两个失败模式 —— 问题宽泛时 5 条不够（关键证据排在第 6~10 位被丢掉，模型答"无法找到"）；问题刁钻时 5 条全是噪声，反而把模型带偏。本项目默认启用自适应检索：
+
+```
+先召回 FETCH_K=20 的大池
+   ↓
+按 cosine distance ≤ SCORE_THRESHOLD 过滤出真正相关的块
+   ↓
+夹在 [MIN_K, MAX_K] 区间：不足则兜底取最相关的 MIN_K 条（保证有上下文），超出则截断
+```
+
+强命中的简单问题返回少而精，弱命中的宽泛问题自动多召回，显著降低"答非所问 / 无法回答"的概率。设 `RETRIEVER_ADAPTIVE=false` 可退回固定 `top-k`。
+
 **关键函数：**
 
 ```python
@@ -194,13 +210,19 @@ add_documents(docs, collection_name="my_paper")
 # 加载已有集合
 vectordb = load_collection("my_paper")
 
-# 语义检索（返回 top-k 相关 chunks）
+# 自适应语义检索（默认）；adaptive=False 退回固定 top-k
 results = similarity_search(vectordb, "transformer 的注意力机制是什么？")
 
 # 查看所有集合
 list_collections()
 
-# 删除集合
+# 列出集合内的文献清单（按文件名聚合，含 chunk 数 / 页数）
+list_documents("my_paper")
+
+# 删除集合内单篇文献
+delete_document("my_paper", source="attention.pdf")
+
+# 删除整个集合
 delete_collection("my_paper")
 ```
 
@@ -324,7 +346,36 @@ curl http://localhost:8000/collections
 
 ---
 
-### `DELETE /collection/{name}` — 删除集合
+### `GET /collection/{name}/documents` — 查看集合内的文献清单
+
+```bash
+curl http://localhost:8000/collection/survey_2024/documents
+```
+
+```json
+{
+  "collection_name": "survey_2024",
+  "document_count": 2,
+  "total_chunks": 153,
+  "documents": [
+    {"source": "alfar.pdf", "chunks": 87, "pages": 12},
+    {"source": "transformer.pdf", "chunks": 66, "pages": 10}
+  ]
+}
+```
+
+---
+
+### `DELETE /collection/{name}/document?source=<文件名>` — 删除集合内单篇文献
+
+```bash
+curl -X DELETE "http://localhost:8000/collection/survey_2024/document?source=alfar.pdf"
+# {"message": "已从 [survey_2024] 删除文献 [alfar.pdf]，移除 87 个 chunk", "removed_chunks": 87}
+```
+
+---
+
+### `DELETE /collection/{name}` — 删除整个集合
 
 ```bash
 curl -X DELETE http://localhost:8000/collection/paper
@@ -352,16 +403,21 @@ curl -X DELETE http://localhost:8000/collection/paper
 以下功能在 MVP 跑通后可按需添加：
 
 **功能增强**
-- 多文档同时问答（合并多个集合的检索结果）
+- ✅ 多文献归入同一集合并联合检索（已支持）
+- ✅ 自适应检索（动态 top-k，已支持）
+- ✅ 查看 / 删除集合内单篇文献（已支持）
 - 一键生成论文结构化摘要（研究问题 / 方法 / 结论）
 - 关键词提取与高亮
 - 导出对话记录为 PDF / Markdown
 
-**工程优化**
-- 流式输出（Streamlit `st.write_stream` + `ask_stream`）
+**工程优化（检索质量，按 ROI 排序）**
+- 换多语言 / 中文 Embedding（`bge-m3` / `bge-large-zh`）—— 提升中文召回的最大单点
+- 向量检索 + BM25 混合排序（救回术语 / 缩写类精确匹配）
+- cross-encoder 重排（`bge-reranker`，大池精排）
+- 多轮追问的指代消解（用历史改写独立问句再检索）
+- 检索评测脚本（hit@k / MRR，量化消融）
+- 流式输出（Streamlit `st.write_stream` + 已有的 `ask_stream`）
 - 文档重复上传检测（MD5 去重）
-- 向量检索 + BM25 混合排序（提升精确度）
-- 切换至 DeepSeek 官方 Embedding 接口（统一供应商）
 
 **部署**
 - Docker Compose 容器化打包
@@ -372,8 +428,11 @@ curl -X DELETE http://localhost:8000/collection/paper
 
 ## 常见问题
 
-**Q: 上传 PDF 后回答答非所问？**  
-调小 `CHUNK_SIZE`（试试 500）或调大 `RETRIEVER_TOP_K`（试试 8），让检索覆盖更多原文。由于切块本身是语义感知的（按句不按字符），通常不需要担心关键句被截断，重点是覆盖宽度。
+**Q: 上传 PDF 后回答答非所问 / 明明有内容却说"无法找到"？**  
+按影响从大到小排查：
+1. **Embedding 语言适配**：默认 `all-MiniLM-L6-v2` 偏英文，中文论文 / 中文提问召回较弱。可换成多语言模型 `BAAI/bge-m3` 或中文模型 `BAAI/bge-small-zh-v1.5`（改 `core/vector_store.py` 的 `_get_embedding_function()` + `.env` 的 `EMBEDDING_MODEL`）。
+2. **放宽自适应阈值**：把 `RETRIEVER_SCORE_THRESHOLD` 调大（如 `0.8`）让更多块通过，或调大 `RETRIEVER_MAX_K`（如 `15`）。
+3. **切块本身是语义感知的**（按句不按字符），通常不必担心关键句被截断，重点在召回宽度与 embedding 质量。
 
 **Q: API Key 如何填写？**  
 在 [DeepSeek 开放平台](https://platform.deepseek.com) 创建 Key，复制到 `.env` 中的 `DEEPSEEK_API_KEY=` 后面，不要加引号。若你使用第三方代理网关，把 `DEEPSEEK_BASE_URL` 改为对应地址即可。

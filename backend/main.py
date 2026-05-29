@@ -13,7 +13,9 @@ from core.rag_chain import ask
 from core.vector_store import (
     add_documents,
     delete_collection,
+    delete_document,
     list_collections,
+    list_documents,
     load_collection,
 )
 from utils.logger import get_logger
@@ -194,6 +196,33 @@ def ask_endpoint(req: AskRequest) -> AskResponse:
 @app.get("/collections")
 def collections() -> dict[str, list[str]]:
     return {"collections": list_collections()}
+
+
+@app.get("/collection/{name}/documents")
+def collection_documents(name: str) -> dict[str, Any]:
+    """列出集合内的文献清单（按文件名聚合，含 chunk 数与页数）。"""
+    try:
+        docs = list_documents(name)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"集合不存在: {name}")
+    return {
+        "collection_name": name,
+        "document_count": len(docs),
+        "total_chunks": sum(d["chunks"] for d in docs),
+        "documents": docs,
+    }
+
+
+@app.delete("/collection/{name}/document")
+def remove_document(name: str, source: str) -> dict[str, Any]:
+    """从集合中删除单篇文献（按文件名）。"""
+    try:
+        removed = delete_document(name, source)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"删除失败: {e}")
+    if removed == 0:
+        raise HTTPException(status_code=404, detail=f"集合 [{name}] 中未找到文献: {source}")
+    return {"message": f"已从 [{name}] 删除文献 [{source}]，移除 {removed} 个 chunk", "removed_chunks": removed}
 
 
 @app.delete("/collection/{name}")

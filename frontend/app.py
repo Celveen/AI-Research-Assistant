@@ -328,6 +328,15 @@ def refresh_collections() -> list[str]:
         return []
 
 
+def fetch_documents(collection: str) -> dict:
+    try:
+        r = api_get(f"/collection/{collection}/documents")
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return {"documents": [], "document_count": 0, "total_chunks": 0}
+
+
 def normalize_name(name: str) -> str:
     n = re.sub(r"[^A-Za-z0-9_-]", "_", name).strip("_-") or "doc"
     if len(n) < 3:
@@ -471,6 +480,39 @@ with st.sidebar:
         )
         st.session_state.current_collection = selected
 
+        # —— 集合内文献清单 ——
+        info = fetch_documents(selected)
+        docs = info.get("documents", [])
+        st.markdown(
+            f"<div style='font-size:12px;color:#656d76;margin:6px 0 8px 0;'>"
+            f"📄 {info.get('document_count', 0)} 篇文献 · "
+            f"{info.get('total_chunks', 0)} chunks</div>",
+            unsafe_allow_html=True,
+        )
+        if docs:
+            for d in docs:
+                c1, c2 = st.columns([5, 1])
+                with c1:
+                    pages = f"· {d['pages']}p" if d.get("pages") else ""
+                    st.markdown(
+                        f"<div class='file-row' style='padding:6px 4px;'>"
+                        f"<span>📑 {d['source']}</span>"
+                        f"<span class='right'>{d['chunks']} chunks {pages}</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                with c2:
+                    if st.button("✕", key=f"del_{selected}_{d['source']}", help=f"删除 {d['source']}"):
+                        try:
+                            api_delete(
+                                f"/collection/{selected}/document",
+                                params={"source": d["source"]},
+                            )
+                            st.toast(f"已删除 {d['source']}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"删除失败: {e}")
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         if st.button("🗑️  删除当前集合", use_container_width=True):
             try:
                 api_delete(f"/collection/{selected}")
