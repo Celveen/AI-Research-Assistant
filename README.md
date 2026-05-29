@@ -108,7 +108,7 @@ LLM_MODEL=deepseek-v4-pro
 | `RETRIEVER_ADAPTIVE` | `true` | 是否启用自适应检索（见下方说明） |
 | `RETRIEVER_FETCH_K` | `20` | 自适应模式下初次召回的「大池」规模 |
 | `RETRIEVER_SCORE_THRESHOLD` | `0.75` | cosine distance 阈值，≤ 此值才算相关（已针对默认双语模型校准） |
-| `RETRIEVER_MIN_K` / `RETRIEVER_MAX_K` | `3` / `10` | 自适应保留块数的下限 / 上限 |
+| `RETRIEVER_MIN_K` / `RETRIEVER_MAX_K` | `3` / `12` | 自适应保留块数的下限 / 上限 |
 | `LLM_TEMPERATURE` | `0.2` | 学术问答场景建议低温度，避免发散 |
 | `LLM_MAX_TOKENS` | `20480` | 输出 token 上限；详尽分析、跨论文综述建议设大 |
 | `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | **中英双语**本地嵌入（fastembed / ONNX，约 220MB） |

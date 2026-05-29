@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     retriever_score_threshold: float = 0.75  # cosine distance，越小越相关；≤阈值才保留
     # 注：针对默认双语模型校准——问句↔段落的真实命中约 0.5~0.65，噪声约 >0.9
     retriever_min_k: int = 3             # 兜底最少返回，保证有上下文
-    retriever_max_k: int = 10            # 上限，避免上下文过长
+    retriever_max_k: int = 12            # 上限，避免上下文过长
 
     llm_temperature: float = 0.2
     llm_max_tokens: int = 20480
