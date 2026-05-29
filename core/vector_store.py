@@ -4,8 +4,8 @@ import re
 from typing import Any
 
 import chromadb
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from chromadb.config import Settings as ChromaSettings
-from chromadb.utils import embedding_functions
 
 from core.config import settings
 from core.document_processor import Chunk
@@ -15,7 +15,30 @@ logger = get_logger("vector-store")
 
 
 _client: chromadb.PersistentClient | None = None
-_embedding_fn = None
+_embedding_fn: "FastEmbedFunction | None" = None
+_MODEL_MARKER = ".embedding_model"
+
+
+class FastEmbedFunction(EmbeddingFunction):
+    """基于 fastembed 的 ONNX 嵌入函数（无需 torch，支持中英双语）。
+
+    默认模型 paraphrase-multilingual-MiniLM-L12-v2 为对称模型（query / passage
+    共用同一编码），因此 add 与 query 走同一函数即可，无需前缀。
+    """
+
+    def __init__(self, model_name: str):
+        from fastembed import TextEmbedding
+
+        self._model_name = model_name
+        self._model = TextEmbedding(model_name=model_name)
+        logger.info(f"已加载 Embedding 模型: {model_name}")
+
+    def __call__(self, input: Documents) -> Embeddings:
+        return [emb.tolist() for emb in self._model.embed(list(input))]
+
+    @staticmethod
+    def name() -> str:
+        return "fastembed"
 
 
 def _get_client() -> chromadb.PersistentClient:
@@ -25,14 +48,35 @@ def _get_client() -> chromadb.PersistentClient:
             path=str(settings.vectorstore_path),
             settings=ChromaSettings(anonymized_telemetry=False),
         )
+        _check_model_consistency()
     return _client
 
 
-def _get_embedding_function():
-    """默认使用 ChromaDB 内置的 ONNX 嵌入 (all-MiniLM-L6-v2)，无需 torch，开箱即用。"""
+def _check_model_consistency() -> None:
+    """记录 / 校验向量库由哪个 embedding 模型构建。
+
+    换模型后旧向量不可用（即便维度相同，向量空间也不同），这里在不一致时
+    给出醒目警告，提示需要清空 data/vectorstore/ 并重新入库。
+    """
+    marker = settings.vectorstore_path / _MODEL_MARKER
+    current = settings.embedding_model
+    if marker.exists():
+        prev = marker.read_text(encoding="utf-8").strip()
+        has_data = any(
+            p.is_dir() for p in settings.vectorstore_path.iterdir() if p.name != _MODEL_MARKER
+        )
+        if prev and prev != current and has_data:
+            logger.warning(
+                f"⚠️ 向量库由 [{prev}] 构建，当前模型为 [{current}]，二者不兼容！"
+                f" 请清空 data/vectorstore/ 后重新上传文档，否则检索结果不可靠。"
+            )
+    marker.write_text(current, encoding="utf-8")
+
+
+def _get_embedding_function() -> FastEmbedFunction:
     global _embedding_fn
     if _embedding_fn is None:
-        _embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+        _embedding_fn = FastEmbedFunction(settings.embedding_model)
     return _embedding_fn
 
 

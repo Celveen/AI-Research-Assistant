@@ -107,11 +107,11 @@ LLM_MODEL=deepseek-v4-pro
 | `RETRIEVER_TOP_K` | `5` | 关闭自适应时的固定返回块数 |
 | `RETRIEVER_ADAPTIVE` | `true` | 是否启用自适应检索（见下方说明） |
 | `RETRIEVER_FETCH_K` | `20` | 自适应模式下初次召回的「大池」规模 |
-| `RETRIEVER_SCORE_THRESHOLD` | `0.6` | cosine distance 阈值，≤ 此值才算相关（越小越严格） |
+| `RETRIEVER_SCORE_THRESHOLD` | `0.75` | cosine distance 阈值，≤ 此值才算相关（已针对默认双语模型校准） |
 | `RETRIEVER_MIN_K` / `RETRIEVER_MAX_K` | `3` / `10` | 自适应保留块数的下限 / 上限 |
 | `LLM_TEMPERATURE` | `0.2` | 学术问答场景建议低温度，避免发散 |
 | `LLM_MAX_TOKENS` | `20480` | 输出 token 上限；详尽分析、跨论文综述建议设大 |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | 默认本地 sentence-transformers 模型，零成本 |
+| `EMBEDDING_MODEL` | `paraphrase-multilingual-MiniLM-L12-v2` | **中英双语**本地嵌入（fastembed / ONNX，约 220MB） |
 
 ### 3. 启动服务
 
@@ -187,7 +187,9 @@ print(settings.llm_model)  # deepseek-v4-pro
 
 封装 ChromaDB 本地持久化操作。每个上传文档对应一个独立集合（collection），集合名 = 文件名（去掉后缀）。
 
-默认嵌入函数使用 `sentence-transformers/all-MiniLM-L6-v2`，**本地运行、零成本**，避免占用 DeepSeek API 配额。
+默认嵌入函数基于 **fastembed（ONNX 运行时，无需 torch）** 加载 `paraphrase-multilingual-MiniLM-L12-v2` —— **中英双语、本地运行、零 API 成本**（约 220MB，首次运行自动下载）。该模型对称（query / passage 同编码），跨语言检索友好：实测「中文提问 ↔ 英文论文」cosine 相似度可达 0.7+，相比纯英文的 `all-MiniLM-L6-v2` 在中文召回上有质的提升。
+
+> ⚠️ 切换 `EMBEDDING_MODEL` 后，旧向量与新模型不在同一向量空间（即便维度相同也不兼容）。代码会在 `data/vectorstore/.embedding_model` 记录构建模型并在不一致时告警；换模型请**清空 `data/vectorstore/` 后重新上传**。
 
 **自适应检索（Adaptive Retrieval）：** 固定 `top-k` 有两个失败模式 —— 问题宽泛时 5 条不够（关键证据排在第 6~10 位被丢掉，模型答"无法找到"）；问题刁钻时 5 条全是噪声，反而把模型带偏。本项目默认启用自适应检索：
 
@@ -430,8 +432,8 @@ curl -X DELETE http://localhost:8000/collection/paper
 
 **Q: 上传 PDF 后回答答非所问 / 明明有内容却说"无法找到"？**  
 按影响从大到小排查：
-1. **Embedding 语言适配**：默认 `all-MiniLM-L6-v2` 偏英文，中文论文 / 中文提问召回较弱。可换成多语言模型 `BAAI/bge-m3` 或中文模型 `BAAI/bge-small-zh-v1.5`（改 `core/vector_store.py` 的 `_get_embedding_function()` + `.env` 的 `EMBEDDING_MODEL`）。
-2. **放宽自适应阈值**：把 `RETRIEVER_SCORE_THRESHOLD` 调大（如 `0.8`）让更多块通过，或调大 `RETRIEVER_MAX_K`（如 `15`）。
+1. **放宽自适应阈值**：把 `RETRIEVER_SCORE_THRESHOLD` 调大（如 `0.85`）让更多块通过，或调大 `RETRIEVER_MAX_K`（如 `15`）。
+2. **Embedding 升级**：默认已是中英双语模型；若追求更高质量可换 `intfloat/multilingual-e5-large`（2.2GB）或 `BAAI/bge-m3`（改 `.env` 的 `EMBEDDING_MODEL`，并清空 `data/vectorstore/` 重新入库）。
 3. **切块本身是语义感知的**（按句不按字符），通常不必担心关键句被截断，重点在召回宽度与 embedding 质量。
 
 **Q: API Key 如何填写？**  
@@ -445,11 +447,11 @@ curl -X DELETE http://localhost:8000/collection/paper
 1. 在 `.env` 中修改 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`LLM_MODEL` 三个变量；
 2. 若对方 SDK 不兼容 OpenAI 协议，再调整 `core/rag_chain.py` 中的 `OpenAI(...)` 客户端构造。
 
-**Q: 想用 DeepSeek 官方的 Embedding？**  
-修改 `core/vector_store.py` 中的 `_get_embedding_function()`，将 `SentenceTransformerEmbeddingFunction` 替换为自定义的 OpenAI 兼容 Embedding 函数，并在 `.env` 中复用 `DEEPSEEK_API_KEY`。
+**Q: 想换其他 Embedding 模型？**  
+直接改 `.env` 的 `EMBEDDING_MODEL` 为 fastembed 支持的任意模型名（`python -c "from fastembed import TextEmbedding; print([m['model'] for m in TextEmbedding.list_supported_models()])"` 可列出全部），然后清空 `data/vectorstore/` 重新上传即可，无需改代码。若要用 DeepSeek / OpenAI 的在线 Embedding 接口，则在 `core/vector_store.py` 自定义一个调用 API 的 `EmbeddingFunction`。
 
 **Q: 中文论文效果差？**  
-在 `document_processor.py` 的 `splitter` 中，`separators` 已包含中文句号 `"。"`，应该支持较好。如果效果仍差，可以试试 `CHUNK_SIZE=500`，或将 `EMBEDDING_MODEL` 换成中文表现更好的 `BAAI/bge-small-zh-v1.5`。
+默认 Embedding 已是中英双语模型，配合语义感知切块（`separators` 含中文句号 `"。"`），中文场景已较好。若仍不理想可试 `CHUNK_SIZE=500`，或换纯中文模型 `BAAI/bge-small-zh-v1.5`（纯中文语料下更强）。
 
 ---
 
