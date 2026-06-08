@@ -18,6 +18,7 @@ env/
 # 项目数据
 data/uploads/*
 data/vectorstore/*
+data/models/
 !data/uploads/.gitkeep
 !data/vectorstore/.gitkeep
 logs/

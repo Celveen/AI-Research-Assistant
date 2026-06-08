@@ -30,7 +30,11 @@ class FastEmbedFunction(EmbeddingFunction):
         from fastembed import TextEmbedding
 
         self._model_name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        # 固定缓存目录到项目内，避免默认的系统临时目录被清理导致模型丢失
+        self._model = TextEmbedding(
+            model_name=model_name,
+            cache_dir=str(settings.model_cache_path),
+        )
         logger.info(f"已加载 Embedding 模型: {model_name}")
 
     def __call__(self, input: Documents) -> Embeddings:

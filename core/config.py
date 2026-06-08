@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     upload_dir: str = "data/uploads"
     vectorstore_dir: str = "data/vectorstore"
     log_dir: str = "logs"
+    model_cache_dir: str = "data/models"  # Embedding 模型缓存（固定路径，避免系统清理临时目录）
 
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
@@ -58,6 +59,12 @@ class Settings(BaseSettings):
     @property
     def log_path(self) -> Path:
         p = PROJECT_ROOT / self.log_dir
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def model_cache_path(self) -> Path:
+        p = PROJECT_ROOT / self.model_cache_dir
         p.mkdir(parents=True, exist_ok=True)
         return p
 

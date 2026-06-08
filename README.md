@@ -58,7 +58,8 @@ ai-research-assistant/
 │   └── test_document_processor.py
 ├── data/
 │   ├── uploads/             # 上传的原始文件
-│   └── vectorstore/         # ChromaDB 持久化数据
+│   ├── vectorstore/         # ChromaDB 持久化数据
+│   └── models/              # Embedding 模型缓存（首次运行自动下载，已 gitignore）
 ├── logs/                    # 运行日志（自动创建）
 ├── .env.example             # 环境变量模板
 ├── requirements.txt
@@ -441,6 +442,12 @@ curl -X DELETE http://localhost:8000/collection/paper
 
 **Q: ChromaDB 数据存在哪里？**  
 默认在 `data/vectorstore/` 目录，项目重启后数据仍在。删除该目录可清空所有向量数据。
+
+**Q: 上传文档报错 `NO_SUCHFILE ... model_optimized.onnx` / `Local file sizes do not match`？**  
+Embedding 模型缓存损坏或未下全。本项目已把缓存固定在 `data/models/`（避免系统清理临时目录）。若仍报错，删除 `data/models/` 后重新运行即可触发完整下载：
+```bash
+rm -rf data/models && bash run.sh   # 首次会重新下载 ~220MB 模型
+```
 
 **Q: 想换回 OpenAI / Claude / 其他模型？**  
 本项目通过 OpenAI 兼容协议调用 DeepSeek。要替换模型，只需：
